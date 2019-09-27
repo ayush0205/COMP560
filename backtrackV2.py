@@ -1,4 +1,4 @@
-import math, sys
+import math, operator
 # read in input and initialize nodes and blocks
 dimensions = input()
 dimensions = int(dimensions)
@@ -6,16 +6,11 @@ node_list = [[0] * dimensions for _ in range(dimensions)]
 block_dict = dict()
 block_list = dict()
 block_location = dict()
-row_dict = dict()
-col_dict = dict()
 last_node_on_block = dict()
 value_list_on_block = dict()
 block_stack = list()
 backtrack_stack = list()
 first_node_on_block = dict()
-#sys.setrecursionlimit(100000)
-global traversal_count
-traversal_count = 0
 
 
 class Block:
@@ -93,91 +88,6 @@ def applyConstraints(node, leaf):
     return node
 
 
-def traverse(block_object, node, values):
-    if node.child is not None and node.possible_values:
-        # apply constraints and choose first non-constrained value
-        node = applyConstraints(node, False)
-        # pass function on to child of current_node
-        if len(node.possible_values) == 0 and node.parent is not None:
-            # backtrack to parent
-            node.possible_values = list(range(1, dimensions + 1))
-            node.attempted_values.clear()
-            if node.parent.value in values:
-                values.remove(node.parent.value)
-            node.parent.value = 0
-            node.value = 0
-            traverse(block_object, node.parent, values)
-        elif len(node.possible_values) == 0 and node.parent is None:
-            # backtrack to previous block
-            node.possible_values = list(range(1, dimensions + 1))
-            node.attempted_values.clear()
-            node.value = 0
-            values.clear()
-            new_block_object = block_stack.pop()
-            values = value_list_on_block[new_block_object]
-            values.pop()
-            backtrack_stack.append(block_object.block_name)
-            first_node_on_block[block_object.block_name] = node
-            traverse(block_list[new_block_object], last_node_on_block[new_block_object], values)
-        else:
-            values.append(node.value)
-            traverse(block_object, node.child, values)
-    elif node.child is None and node.possible_values:
-        # apply constraints and iterate through non-constrained values
-        node = applyConstraints(node, True)
-        if len(node.possible_values) == 0 and node.parent is not None:
-            # backtrack to parent
-            node.possible_values = list(range(1, dimensions + 1))
-            node.attempted_values.clear()
-            if node.parent.value in values:
-                values.remove(node.parent.value)
-            node.parent.value = 0
-            node.value = 0
-            traverse(block_object, node.parent, values)
-        elif len(node.possible_values) == 0 and node.parent is None:
-            # backtrack to previous block
-            node.possible_values = list(range(1, dimensions + 1))
-            node.attempted_values.clear()
-            node.value = 0
-            values.clear()
-            new_block_object = block_stack.pop()
-            values = value_list_on_block[new_block_object]
-            values.pop()
-            backtrack_stack.append(block_object.block_name)
-            first_node_on_block[block_object.block_name] = node
-            traverse(block_list[new_block_object], last_node_on_block[new_block_object], values)
-        else:
-            not_a_fail = False
-            for possibility in node.possible_values:
-                values.append(possibility)
-                if operateCheck(block_object.numeric_value, values, block_object.operator):
-                    node.value = possibility
-                    node.attempted_values.append(possibility)
-                    last_node_on_block[block_object.block_name] = node
-                    value_list_on_block[block_object.block_name] = values.copy()
-                    block_stack.append(block_object.block_name)
-                    if len(backtrack_stack) == 0:
-                        return
-                    else:
-                        view = node_list
-                        forward_block = backtrack_stack.pop()
-                        values.clear()
-                        traverse(block_list[forward_block], first_node_on_block[forward_block], values)
-                        not_a_fail = True
-                        break
-                else:
-                    values.remove(possibility)
-            # if none work, backtrack by calling function on parent
-            if node.parent.value in values and not not_a_fail:
-                values.remove(node.parent.value)
-            if not not_a_fail:
-                node.parent.value = 0
-                node.value = 0
-                node.attempted_values.clear()
-                node.possible_values = list(range(1, dimensions+1))
-                traverse(block_object, node.parent, values)
-
-
 for i in range(0, dimensions):
     current_line = input()
     for k in range(0, dimensions):
@@ -209,23 +119,95 @@ for block in block_list:
         current_node.parent = parent
         parent = current_node
 
+block_scores = dict()
+sorted_blocks = dict()
+for block in block_location:
+    length_score = len(block_location[block])*-1
+    operator_symbol = block_list[block].operator
+    operator_score = 0
+    if operator_symbol == "*" or "/":
+        operator_score = -1
+    score = length_score + operator_score
+    block_scores[block] = score
 
-for block in block_list:
-    value_list = []
-    first_location = block_location[block][0]
-    decoded_x = (first_location - 1) % dimensions + 1
-    decoded_y = math.ceil(first_location / dimensions)
-    current_node = node_list[decoded_y - 1][decoded_x - 1]
-    #not_a_fail = False
-    traverse(block_list[block], current_node, value_list)
-    traversal_count = traversal_count + 1
+block_scores = sorted(block_scores.items(), key=operator.itemgetter(1))
+
+for i in range(0,len(block_scores)):
+    sorted_blocks[block_scores[i][0]] = block_scores[i][1]
+
+i = 0
+j = 0
+backtrack = False
+value_list = []
+blocks = list(block_list.keys())
+node_count = 0
+while i < len(block_list):
+    block_locations = block_location[blocks[i]]
+    current_block = block_list[blocks[i]]
+    if backtrack:
+        i = i - 1
+        block_locations = block_location[blocks[i]]
+        current_block = block_list[blocks[i]]
+        value_list = value_list_on_block[current_block.block_name]
+        value_list.pop()
+        j = len(block_locations) - 1
+        backtrack = False
+    while j < len(block_locations):
+        current_location = block_locations[j]
+        decoded_x = (current_location - 1) % dimensions + 1
+        decoded_y = math.ceil(current_location / dimensions)
+        current_node = node_list[decoded_y - 1][decoded_x - 1]
+        if j != len(block_locations)-1:
+            applyConstraints(current_node, False)
+            if len(current_node.possible_values) == 0:
+                current_node.possible_values = list(range(1, dimensions + 1))
+                current_node.attempted_values.clear()
+                current_node.value = 0
+                if j == 0:
+                    backtrack = True
+                    break
+                else:
+                    if current_node.parent.value in value_list:
+                        value_list.remove(current_node.parent.value)
+                    current_node.parent.value = 0
+                    j = j - 1
+            else:
+                value_list.append(current_node.value)
+                j = j + 1
+        else:
+            failure = True
+            applyConstraints(current_node, True)
+            for possibility in current_node.possible_values:
+                value_list.append(possibility)
+                if operateCheck(current_block.numeric_value, value_list, current_block.operator):
+                    current_node.value = possibility
+                    current_node.attempted_values.append(possibility)
+                    value_list_on_block[current_block.block_name] = value_list.copy()
+                    value_list = []
+                    i = i + 1
+                    j = 0
+                    failure = False
+                    break
+                else:
+                    value_list.remove(possibility)
+            if failure:
+                current_node.possible_values = list(range(1, dimensions + 1))
+                current_node.attempted_values.clear()
+                current_node.value = 0
+                if current_node.parent.value in value_list:
+                    value_list.remove(current_node.parent.value)
+                current_node.parent.value = 0
+                j = j - 1
+            else:
+                break
+        node_count = node_count + 1
 
 
 for i in range(0, dimensions):
     for j in range(0, dimensions):
         print(node_list[i][j].value, end=" ")
     print()
-
+print(node_count)
 
 
 
